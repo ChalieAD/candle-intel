@@ -1,0 +1,42 @@
+name: Daily Candle Intel Report
+
+on:
+  schedule:
+    # Every day at 07:00 UTC (07:00 GMT / 12:30 IST)
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+    # Allows manual trigger from the GitHub Actions UI anytime
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run full pipeline
+        env:
+          GROQ_API_KEY:       ${{ secrets.GROQ_API_KEY }}
+          GMAIL_SENDER:       ${{ secrets.GMAIL_SENDER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          EMAIL_RECIPIENT:    ${{ secrets.EMAIL_RECIPIENT }}
+        run: python run.py
+
+      - name: Upload HTML report as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: candle-intel-report-${{ github.run_id }}
+          path: reports/
+          retention-days: 30
