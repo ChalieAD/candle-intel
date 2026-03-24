@@ -1,18 +1,20 @@
 """
-Agent 5 — Email Delivery
-Sends the HTML report as a rich email via Gmail SMTP.
-Reads credentials from .env
+Agent 5 — Email Delivery + Supabase
+Sends the HTML report via Gmail SMTP, then writes a run summary
+to Supabase (jarvis-hq / agent_outputs table).
 """
 
+import json
 import os
 import smtplib
-from datetime import datetime
+from datetime import date, datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
 from pathlib import Path
 
+import requests
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -88,6 +90,70 @@ def send(
     print(f"  Sent to {recipient}")
 
 
+# ── Supabase ──────────────────────────────────────────────────────────────────
+
+def load_latest_metrics(reports_dir: str = "reports") -> dict:
+    files = sorted(Path(reports_dir).glob("metrics_*.json"), reverse=True)
+    if not files:
+        return {}
+    with open(files[0]) as f:
+        return json.load(f)
+
+
+def build_supabase_summary(metrics: dict) -> dict:
+    stores = metrics.get("stores", {})
+    total_new = sum(s.get("new_last_30d", 0) for s in stores.values())
+    avg_prices = [s["avg_price"] for s in stores.values() if s.get("avg_price")]
+    market_avg = round(sum(avg_prices) / len(avg_prices), 2) if avg_prices else 0
+    most_active = max(stores.items(), key=lambda x: x[1].get("new_last_30d", 0), default=("", {}))[0]
+
+    return {
+        "total_products":   metrics.get("total_products", 0),
+        "total_stores":     metrics.get("total_stores", 0),
+        "total_new_drops":  total_new,
+        "market_avg_price": market_avg,
+        "most_active_store": most_active,
+        "price_tiers":      metrics.get("price_tiers", {}),
+        "store_summaries": {
+            name: {
+                "total_products": s.get("total_products", 0),
+                "new_last_30d":   s.get("new_last_30d", 0),
+                "avg_price":      s.get("avg_price"),
+            }
+            for name, s in stores.items()
+        },
+    }
+
+
+def write_to_supabase(summary: dict) -> None:
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_KEY")
+
+    if not url or not key:
+        print("  [Supabase] SUPABASE_URL/SUPABASE_KEY not set — skipping")
+        return
+
+    resp = requests.post(
+        f"{url}/rest/v1/agent_outputs",
+        headers={
+            "apikey":        key,
+            "Authorization": f"Bearer {key}",
+            "Content-Type":  "application/json",
+            "Prefer":        "return=minimal",
+        },
+        json={
+            "agent_name": "candle-intel",
+            "run_date":   date.today().isoformat(),
+            "summary":    summary,
+        },
+        timeout=10,
+    )
+    resp.raise_for_status()
+    print("  [Supabase] Run summary written to agent_outputs")
+
+
+# ── Entry point ───────────────────────────────────────────────────────────────
+
 def run():
     print(f"\n{'='*60}")
     print("  AGENT 5 -- EMAIL DELIVERY")
@@ -109,11 +175,23 @@ def run():
             "See .env.example for setup instructions."
         )
 
+    # [1/2] Email
     html_content, html_path = load_latest_html()
+    print(f"  [1/2] Sending email...")
     print(f"  Report: {html_path}")
-
     send(html_content, html_path, sender, app_password, recipient)
-    print("  [OK] Email delivered successfully.\n")
+    print("  [OK] Email delivered successfully.")
+
+    # [2/2] Supabase
+    print(f"\n  [2/2] Writing to Supabase...")
+    try:
+        metrics = load_latest_metrics()
+        summary = build_supabase_summary(metrics)
+        write_to_supabase(summary)
+    except Exception as e:
+        print(f"  [ERROR] Supabase write failed: {e}\n")
+        raise
+    print()
 
 
 if __name__ == "__main__":
