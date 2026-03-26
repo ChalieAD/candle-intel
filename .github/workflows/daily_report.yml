@@ -31,6 +31,8 @@ jobs:
           GMAIL_SENDER:       ${{ secrets.GMAIL_SENDER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           EMAIL_RECIPIENT:    ${{ secrets.EMAIL_RECIPIENT }}
+          SUPABASE_URL:       ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:       ${{ secrets.SUPABASE_KEY }}
         run: python run.py
 
       - name: Upload HTML report as artifact
