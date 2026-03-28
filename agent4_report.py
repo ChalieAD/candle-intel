@@ -52,6 +52,11 @@ def score_color(score):
     if score >= 5: return "#d97706"
     return "#94a3b8"
 
+def score_cls(score):
+    if score >= 8: return "high"
+    if score >= 5: return "medium"
+    return "low"
+
 def segment(avg_price):
     if avg_price is None: return "—"
     if avg_price < 25:    return "Budget"
@@ -64,6 +69,21 @@ SEGMENT_STYLE = {
     "Premium":   "background:#fef3c7;color:#92400e;",
     "Luxury":    "background:#f3e8ff;color:#7e22ce;",
     "Budget":    "background:#dcfce7;color:#166534;",
+}
+
+SEGMENT_BADGE = {
+    "Budget":    "badge--budget",
+    "Mid-Range": "badge--midrange",
+    "Premium":   "badge--premium",
+    "Luxury":    "badge--luxury",
+    "—":         "",
+}
+
+CONFIDENCE_BADGE_CLS = {
+    "HIGH":    "badge--high",
+    "MEDIUM":  "badge--medium",
+    "LOW":     "badge--low",
+    "MONITOR": "badge--monitor",
 }
 
 def strip_md(text):
@@ -158,11 +178,11 @@ def parse_advisor_suggestions(agent3):
             title = title[:87].rstrip() + "…"
 
         results.append({
-            "confidence":   confidence,
-            "is_monitor":   is_monitor,
+            "confidence":    confidence,
+            "is_monitor":    is_monitor,
             "data_citation": data_citation,
-            "body":         body,
-            "title":        title,
+            "body":          body,
+            "title":         title,
         })
 
     return results if results else None
@@ -190,89 +210,643 @@ def category_counts(metrics):
 # ── CSS ───────────────────────────────────────────────────────────────────────
 
 CSS = """
-@page { size: A4; margin: 0; }
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: 11px;
-  line-height: 1.6;
-  background: #e5e7eb;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=DM+Serif+Display&display=swap');
+
+@page {
+    size: A4;
+    margin: 0;
 }
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html, body {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 10pt;
+    line-height: 1.55;
+    color: #0c1220;
+    background: #f8f9fb;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+}
+
 .page {
-  width: 210mm;
-  height: 297mm;
-  margin: 0 auto;
-  page-break-after: always;
-  overflow: hidden;
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  background: white;
+    width: 210mm;
+    height: 297mm;
+    padding: 20mm 22mm 18mm 22mm;
+    background: #f8f9fb;
+    position: relative;
+    overflow: hidden;
+    page-break-after: always;
+    display: flex;
+    flex-direction: column;
 }
-.page:last-child { page-break-after: avoid; }
-.top-bar { height: 6px; background: #0f172a; flex-shrink: 0; }
-.content {
-  flex: 1;
-  padding: 32px 36px 48px;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+
+.page:last-child {
+    page-break-after: avoid;
 }
+
+.report-header {
+    background: #0c1220;
+    padding: 22px 28px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-radius: 6px;
+    margin-bottom: 20px;
+}
+
+.report-header .brand-name {
+    font-family: 'DM Serif Display', serif;
+    font-size: 22pt;
+    color: #ffffff;
+    letter-spacing: 0.5px;
+}
+
+.report-header .brand-subtitle {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 8pt;
+    color: #94a3b8;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    font-weight: 500;
+    margin-top: 2px;
+}
+
+.report-header .report-date {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 9pt;
+    color: #94a3b8;
+    text-align: right;
+    font-weight: 500;
+}
+
+.section-heading {
+    font-family: 'DM Serif Display', serif;
+    font-size: 14pt;
+    color: #0c1220;
+    margin-bottom: 4px;
+    letter-spacing: 0.3px;
+}
+
+.section-heading-bar {
+    width: 40px;
+    height: 3px;
+    background: #e8762a;
+    border-radius: 2px;
+    margin-bottom: 16px;
+}
+
+.metrics-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.metric-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 0;
+    overflow: hidden;
+}
+
+.metric-card-inner {
+    padding: 16px 20px;
+}
+
+.metric-card .metric-value {
+    font-family: 'DM Serif Display', serif;
+    font-size: 28pt;
+    color: #0c1220;
+    line-height: 1.1;
+    margin-bottom: 4px;
+}
+
+.metric-card .metric-label {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 7pt;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 1.8px;
+    font-weight: 600;
+}
+
+.metric-card--primary {
+    border-top: 3px solid #e8762a;
+}
+
+.metric-card--secondary {
+    border-top: 3px solid #0c1220;
+}
+
+.insight-box {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 18px 22px;
+    margin-bottom: 14px;
+    position: relative;
+}
+
+.insight-box::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 4px;
+    height: 100%;
+    border-radius: 6px 0 0 6px;
+}
+
+.insight-box--alert::before {
+    background: #e8762a;
+}
+
+.insight-box--context::before {
+    background: #2563eb;
+}
+
+.insight-box .insight-heading {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 8pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: #475569;
+    margin-bottom: 8px;
+}
+
+.insight-box .insight-text {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 9.5pt;
+    line-height: 1.6;
+    color: #1e293b;
+}
+
+.data-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 16px;
+    font-size: 9pt;
+}
+
+.data-table thead {
+    background: #141c2e;
+}
+
+.data-table thead th {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 7.5pt;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: #ffffff;
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: none;
+}
+
+.data-table tbody tr {
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.data-table tbody tr:last-child {
+    border-bottom: none;
+}
+
+.data-table tbody tr:nth-child(even) {
+    background: #f8f9fb;
+}
+
+.data-table tbody td {
+    padding: 10px 14px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 9pt;
+    color: #1e293b;
+    vertical-align: middle;
+}
+
+.data-table .num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+}
+
+.momentum-bar-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.momentum-score-label {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 10pt;
+    font-weight: 700;
+    min-width: 32px;
+}
+
+.momentum-bar-track {
+    flex: 1;
+    height: 6px;
+    background: #e2e8f0;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.momentum-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+}
+
+.momentum-bar-fill.score-high    { background: #16a34a; }
+.momentum-bar-fill.score-medium  { background: #e8762a; }
+.momentum-bar-fill.score-low     { background: #94a3b8; }
+
+.score-text-high   { color: #16a34a; }
+.score-text-medium { color: #e8762a; }
+.score-text-low    { color: #475569; }
+
+.badge {
+    display: inline-block;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 7pt;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    padding: 3px 10px;
+    border-radius: 12px;
+    text-transform: uppercase;
+}
+
+.badge--budget   { background: #dbeafe; color: #1e40af; }
+.badge--midrange { background: #fef3c7; color: #92400e; }
+.badge--premium  { background: #fce7f3; color: #9d174d; }
+.badge--luxury   { background: #f3e8ff; color: #6b21a8; }
+
+.badge--high    { background: #dc2626; color: #ffffff; font-size: 6.5pt; padding: 2px 10px; }
+.badge--medium  { background: #d97706; color: #ffffff; font-size: 6.5pt; padding: 2px 10px; }
+.badge--low     { background: #64748b; color: #ffffff; font-size: 6.5pt; padding: 2px 10px; }
+.badge--monitor { background: #2563eb; color: #ffffff; font-size: 6.5pt; padding: 2px 10px; }
+
+.category-tag {
+    display: inline-block;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 7pt;
+    color: #475569;
+    background: #f1f5f9;
+    padding: 2px 8px;
+    border-radius: 3px;
+    margin-right: 4px;
+    margin-bottom: 2px;
+}
+
+.price-dist-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.price-dist-label {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 8.5pt;
+    color: #475569;
+    width: 140px;
+    flex-shrink: 0;
+}
+
+.price-dist-bar-track {
+    flex: 1;
+    height: 8px;
+    background: #e2e8f0;
+    border-radius: 4px;
+    overflow: hidden;
+    margin: 0 10px;
+}
+
+.price-dist-bar-fill {
+    height: 100%;
+    background: #0c1220;
+    border-radius: 4px;
+}
+
+.price-dist-value {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 9pt;
+    font-weight: 700;
+    color: #0c1220;
+    width: 50px;
+    text-align: right;
+}
+
+.launches-brand-header {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 8pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: #0c1220;
+    padding: 10px 0 6px 0;
+    border-bottom: 1px solid #e2e8f0;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.launches-brand-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.launches-product-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px 0 5px 14px;
+    font-size: 9pt;
+    color: #1e293b;
+}
+
+.launches-product-row .product-price {
+    font-weight: 600;
+    color: #475569;
+    font-variant-numeric: tabular-nums;
+}
+
+.launches-more {
+    font-size: 8pt;
+    color: #94a3b8;
+    padding-left: 14px;
+    font-style: italic;
+    margin-bottom: 10px;
+}
+
+.cat-intel-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.cat-intel-label {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 8.5pt;
+    color: #1e293b;
+    width: 120px;
+    flex-shrink: 0;
+}
+
+.cat-intel-bar-track {
+    flex: 1;
+    height: 8px;
+    background: #e2e8f0;
+    border-radius: 4px;
+    overflow: hidden;
+    margin: 0 10px;
+}
+
+.cat-intel-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #0c1220, #1a2540);
+    border-radius: 4px;
+}
+
+.cat-intel-value {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 9pt;
+    font-weight: 700;
+    color: #0c1220;
+    width: 30px;
+    text-align: right;
+}
+
+.callout-dark {
+    background: #0c1220;
+    border-radius: 6px;
+    padding: 18px 22px;
+    margin: 14px 0;
+}
+
+.callout-dark p {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 9.5pt;
+    line-height: 1.65;
+    color: #e2e8f0;
+}
+
+.callout-dark strong {
+    color: #ffffff;
+    font-weight: 600;
+}
+
+.score-strip {
+    display: flex;
+    gap: 10px;
+    margin: 14px 0;
+}
+
+.score-strip-item {
+    flex: 1;
+    text-align: center;
+    padding: 12px 8px;
+    border-radius: 6px;
+    background: #141c2e;
+}
+
+.score-strip-item .score-number {
+    font-family: 'DM Serif Display', serif;
+    font-size: 20pt;
+    line-height: 1;
+    margin-bottom: 4px;
+}
+
+.score-strip-item .score-brand {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 7pt;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.score-strip-item.rank-1 .score-number { color: #16a34a; }
+.score-strip-item.rank-2 .score-number { color: #e8762a; }
+.score-strip-item.rank-3 .score-number { color: #94a3b8; }
+.score-strip-item.rank-4 .score-number { color: #94a3b8; }
+.score-strip-item.rank-5 .score-number { color: #64748b; }
+
+.watch-section-intro {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 8.5pt;
+    color: #64748b;
+    margin-bottom: 18px;
+    line-height: 1.5;
+}
+
+.watch-card {
+    display: flex;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 14px;
+    min-height: 120px;
+}
+
+.watch-card-rank {
+    width: 56px;
+    background: #0c1220;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 18px;
+    flex-shrink: 0;
+}
+
+.watch-card-rank .rank-number {
+    font-family: 'DM Serif Display', serif;
+    font-size: 24pt;
+    color: #e8762a;
+    line-height: 1;
+}
+
+.watch-card-body {
+    flex: 1;
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.watch-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 8px;
+    gap: 12px;
+}
+
+.watch-card-title {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 10.5pt;
+    font-weight: 700;
+    color: #0c1220;
+    line-height: 1.35;
+    flex: 1;
+}
+
+.watch-card-text {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 9pt;
+    color: #475569;
+    line-height: 1.55;
+    margin-bottom: 10px;
+}
+
+.watch-card-evidence-alt {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 7.5pt;
+    color: #94a3b8;
+    border-top: 1px solid #f1f5f9;
+    padding-top: 8px;
+}
+
+.watch-card-evidence-alt .evidence-label {
+    font-weight: 700;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-size: 6.5pt;
+    margin-right: 4px;
+}
+
+.market-overview-box {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 0;
+    margin-bottom: 18px;
+    overflow: hidden;
+}
+
+.market-overview-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 20px;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.market-overview-row:last-child {
+    border-bottom: none;
+}
+
+.market-overview-row .overview-label {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 9pt;
+    color: #64748b;
+}
+
+.market-overview-row .overview-value {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 9.5pt;
+    font-weight: 700;
+    color: #0c1220;
+}
+
 .page-footer {
-  position: absolute;
-  bottom: 0; left: 0; right: 0;
-  height: 36px;
-  border-top: 1px solid #e2e8f0;
-  padding: 0 36px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 9px;
-  color: #94a3b8;
-  background: white;
+    margin-top: auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 12px;
+    border-top: 1px solid #e2e8f0;
 }
-.sh {
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: #0f172a;
-  padding-bottom: 7px;
-  border-bottom: 3px solid #f97316;
-  margin-bottom: 14px;
-  margin-top: 24px;
+
+.page-footer .footer-brand {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 7pt;
+    color: #94a3b8;
+    letter-spacing: 0.5px;
 }
-.sh.first { margin-top: 0; }
-table { width: 100%; border-collapse: collapse; font-size: 11px; }
-thead tr { background: #0f172a; }
-thead th {
-  padding: 8px 10px;
-  font-size: 9px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  font-weight: 600;
-  text-align: left;
-  color: white;
+
+.page-footer .footer-page {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 7pt;
+    color: #94a3b8;
 }
-tbody td { padding: 11px 10px; border-bottom: 1px solid #e2e8f0; color: #334155; }
-tbody tr:nth-child(even) td { background: #f8fafc; }
-.pill {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-size: 9px;
-  font-weight: 700;
-}
-.cat-pill {
-  display: inline-block;
-  padding: 2px 5px;
-  border-radius: 3px;
-  background: #f1f5f9;
-  color: #475569;
-  font-size: 9px;
-  margin: 1px 2px 1px 0;
+
+.mt-0  { margin-top: 0; }
+.mt-8  { margin-top: 8px; }
+.mt-12 { margin-top: 12px; }
+.mt-16 { margin-top: 16px; }
+.mt-20 { margin-top: 20px; }
+.mb-0  { margin-bottom: 0; }
+.mb-8  { margin-bottom: 8px; }
+.mb-12 { margin-bottom: 12px; }
+.mb-16 { margin-bottom: 16px; }
+.mb-20 { margin-bottom: 20px; }
+
+.text-muted     { color: #94a3b8; }
+.text-secondary { color: #475569; }
+.font-bold      { font-weight: 700; }
+.font-medium    { font-weight: 500; }
+
+.flex-grow { flex: 1; }
+.flex-col  { display: flex; flex-direction: column; }
+
+.section-fill {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
 }
 """
 
@@ -281,8 +855,8 @@ tbody tr:nth-child(even) td { background: #f8fafc; }
 def footer_html(date_fmt, page_num):
     return (
         f'<div class="page-footer">'
-        f'<span>Candle Intel · Daily Intelligence Report</span>'
-        f'<span>{esc(date_fmt)} · Page {page_num}</span>'
+        f'<span class="footer-brand">Candle Intel · Daily Intelligence Report</span>'
+        f'<span class="footer-page">{esc(date_fmt)} · Page {page_num}</span>'
         f'</div>'
     )
 
@@ -314,10 +888,11 @@ def page1_html(metrics, md, agent3=None):
     kpi_html = ""
     for val, label in kpi_items:
         kpi_html += (
-            f'<div style="border:1px solid #e2e8f0;border-top:3px solid #f97316;'
-            f'border-radius:6px;padding:16px 18px;">'
-            f'<div style="font-size:36px;font-weight:700;color:#0f172a;margin-bottom:4px;">{esc(val)}</div>'
-            f'<div style="font-size:9px;text-transform:uppercase;color:#64748b;letter-spacing:0.1em;">{esc(label)}</div>'
+            f'<div class="metric-card metric-card--primary">'
+            f'<div class="metric-card-inner">'
+            f'<div class="metric-value">{esc(val)}</div>'
+            f'<div class="metric-label">{esc(label)}</div>'
+            f'</div>'
             f'</div>'
         )
 
@@ -329,58 +904,49 @@ def page1_html(metrics, md, agent3=None):
     overview_html = ""
     for label, value in overview_rows:
         overview_html += (
-            f'<div style="display:flex;justify-content:space-between;align-items:center;'
-            f'padding:10px 0;border-bottom:1px solid #f1f5f9;">'
-            f'<span style="color:#64748b;font-size:10px;">{label}</span>'
-            f'<span style="color:#0f172a;font-size:10px;font-weight:700;">{value}</span>'
+            f'<div class="market-overview-row">'
+            f'<span class="overview-label">{esc(label)}</span>'
+            f'<span class="overview-value">{value}</span>'
             f'</div>'
         )
 
     if writer_p1:
         insight_html = (
-            f'<div style="background:#f8fafc;border-left:3px solid #f97316;border-radius:0 6px 6px 0;'
-            f'padding:14px 16px;font-size:11px;color:#334155;line-height:1.7;margin-bottom:12px;">'
-            f'{esc(writer_p1["happened"])}'
+            f'<div class="insight-box insight-box--alert">'
+            f'<div class="insight-text">{esc(writer_p1["happened"])}</div>'
             f'</div>'
-            f'<div class="sh">What It Means For You</div>'
-            f'<div style="background:#f8fafc;border-left:3px solid #0f172a;border-radius:0 6px 6px 0;'
-            f'padding:14px 16px;font-size:11px;color:#334155;line-height:1.7;">'
-            f'{esc(writer_p1["means"])}'
+            f'<div class="section-heading mt-20">What It Means For You</div>'
+            f'<div class="section-heading-bar"></div>'
+            f'<div class="insight-box insight-box--context">'
+            f'<div class="insight-text">{esc(writer_p1["means"])}</div>'
             f'</div>'
         )
     else:
         insight_html = (
-            f'<div style="background:#f8fafc;border-left:3px solid #f97316;border-radius:0 6px 6px 0;'
-            f'padding:14px 16px;font-size:11px;color:#334155;line-height:1.7;">'
-            f'{esc(parse_snapshot(md))}'
+            f'<div class="insight-box insight-box--alert">'
+            f'<div class="insight-text">{esc(parse_snapshot(md))}</div>'
             f'</div>'
         )
 
     return (
         f'<div class="page">'
-        # Banner
-        f'<div style="background:#0f172a;padding:28px 36px;display:flex;'
-        f'justify-content:space-between;align-items:center;flex-shrink:0;">'
+        f'<div class="report-header">'
         f'<div>'
-        f'<div style="font-size:22px;font-weight:700;color:white;line-height:1;">CANDLE INTEL</div>'
-        f'<div style="font-size:10px;color:#94a3b8;margin-top:5px;">Daily Intelligence Report</div>'
+        f'<div class="brand-name">CANDLE INTEL</div>'
+        f'<div class="brand-subtitle">Daily Intelligence Report</div>'
         f'</div>'
-        f'<div style="font-size:11px;color:#94a3b8;">{esc(date_fmt)}</div>'
+        f'<div class="report-date">{esc(date_fmt)}</div>'
         f'</div>'
-        # Orange accent line
-        f'<div style="height:3px;background:#f97316;flex-shrink:0;"></div>'
-        # Content
-        f'<div class="content" style="padding-top:28px;">'
-        f'<div class="sh first">Today\'s Metrics</div>'
-        f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px;">'
-        f'{kpi_html}'
-        f'</div>'
-        f'<div class="sh">What Happened Today</div>'
+        f'<div class="section-heading">Today\'s Metrics</div>'
+        f'<div class="section-heading-bar"></div>'
+        f'<div class="metrics-grid">{kpi_html}</div>'
+        f'<div class="section-heading mt-20">What Happened Today</div>'
+        f'<div class="section-heading-bar"></div>'
         f'{insight_html}'
         f'<div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;">'
-        f'<div class="sh">Market Overview</div>'
-        f'{overview_html}'
-        f'</div>'
+        f'<div class="section-heading mt-20">Market Overview</div>'
+        f'<div class="section-heading-bar"></div>'
+        f'<div class="market-overview-box">{overview_html}</div>'
         f'</div>'
         f'{footer_html(date_fmt, 1)}'
         f'</div>'
@@ -401,18 +967,20 @@ def page2_html(metrics):
         rng = f"${mn} – ${mx}" if mn or mx else "—"
         sc  = momentum_score(s)
         scores[name] = sc
-        col = score_color(sc)
         bar_w = sc * 10
+        cls   = score_cls(sc)
         rows_html += (
             f'<tr>'
             f'<td>{esc(name)}</td>'
-            f'<td>{s["total_products"]}</td>'
-            f'<td>{s["new_last_30d"]}</td>'
+            f'<td class="num">{s["total_products"]}</td>'
+            f'<td class="num">{s["new_last_30d"]}</td>'
             f'<td>{esc(rng)}</td>'
             f'<td>'
-            f'<span style="font-weight:700;color:{col};">{sc}/10</span>'
-            f'<div style="height:4px;background:#e2e8f0;border-radius:2px;margin-top:4px;">'
-            f'<div style="height:100%;background:{col};border-radius:2px;width:{bar_w}%;"></div>'
+            f'<div class="momentum-bar-container">'
+            f'<span class="momentum-score-label score-text-{cls}">{sc}/10</span>'
+            f'<div class="momentum-bar-track">'
+            f'<div class="momentum-bar-fill score-{cls}" style="width:{bar_w}%;"></div>'
+            f'</div>'
             f'</div>'
             f'</td>'
             f'</tr>'
@@ -436,24 +1004,25 @@ def page2_html(metrics):
         )
     summary_text = " ".join(summary_parts)
 
-    score_tiles = "".join(
-        f'<div style="flex:1;background:rgba(255,255,255,0.07);border-radius:6px;'
-        f'padding:14px 16px;min-height:80px;display:flex;flex-direction:column;justify-content:center;">'
-        f'<div style="font-size:22px;font-weight:700;color:{score_color(scores[name])};">{scores[name]}/10</div>'
-        f'<div style="font-size:10px;color:#94a3b8;margin-top:4px;">{esc(name)}</div>'
-        f'</div>'
-        for name in sorted(scores, key=lambda n: scores[n], reverse=True)
-    )
+    score_tiles = ""
+    for idx, (name, sc) in enumerate(
+        sorted(scores.items(), key=lambda x: x[1], reverse=True), 1
+    ):
+        score_tiles += (
+            f'<div class="score-strip-item rank-{idx}">'
+            f'<div class="score-number">{sc}/10</div>'
+            f'<div class="score-brand">{esc(name)}</div>'
+            f'</div>'
+        )
 
     return (
         f'<div class="page">'
-        f'<div class="top-bar"></div>'
-        f'<div class="content">'
-        f'<div class="sh first">Market Momentum Scores</div>'
-        f'<p style="font-size:10px;color:#94a3b8;margin-bottom:16px;">'
+        f'<div class="section-heading">Market Momentum Scores</div>'
+        f'<div class="section-heading-bar"></div>'
+        f'<p class="watch-section-intro">'
         f'Momentum is calculated from new product activity, pricing range, and catalogue volume. Scored 1–10.'
         f'</p>'
-        f'<table>'
+        f'<table class="data-table">'
         f'<thead><tr>'
         f'<th>Brand</th><th>Products</th><th>New Drops (30d)</th>'
         f'<th>Price Range</th><th>Momentum Score</th>'
@@ -461,15 +1030,11 @@ def page2_html(metrics):
         f'<tbody>{rows_html}</tbody>'
         f'</table>'
         f'<div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;">'
-        f'<div class="sh">What This Means</div>'
-        f'<div style="background:#0f172a;border-radius:8px;padding:32px 28px;">'
-        f'<p style="font-size:13px;font-weight:600;color:white;margin-bottom:20px;line-height:1.5;">'
-        f'{summary_text}'
-        f'</p>'
-        f'<div style="display:flex;gap:12px;">'
-        f'{score_tiles}'
-        f'</div>'
-        f'</div>'
+        f'<div class="section-heading mt-20">What This Means</div>'
+        f'<div class="section-heading-bar"></div>'
+        f'<div class="callout-dark">'
+        f'<p>{summary_text}</p>'
+        f'<div class="score-strip mt-12">{score_tiles}</div>'
         f'</div>'
         f'</div>'
         f'{footer_html(date_fmt, 2)}'
@@ -492,16 +1057,20 @@ def page3_html(metrics):
         avg       = f"${s['avg_price']}" if s.get("avg_price") else "—"
         rng       = f"${mn} – ${mx}" if mn or mx else "—"
         seg       = segment(s.get("avg_price"))
-        seg_style = SEGMENT_STYLE.get(seg, "background:#f1f5f9;color:#334155;")
+        badge_cls = SEGMENT_BADGE.get(seg, "")
         cats      = s.get("top_product_types", [])[:3]
-        cats_html = "".join(f'<span class="cat-pill">{esc(c)}</span>' for c in cats)
+        cats_html = "".join(f'<span class="category-tag">{esc(c)}</span>' for c in cats)
+        badge_html = (
+            f'<span class="badge {badge_cls}">{esc(seg)}</span>'
+            if badge_cls else esc(seg)
+        )
         rows_html += (
             f'<tr>'
             f'<td><strong>{esc(name)}</strong></td>'
-            f'<td>{s["total_products"]}</td>'
-            f'<td>{esc(avg)}</td>'
+            f'<td class="num">{s["total_products"]}</td>'
+            f'<td class="num">{esc(avg)}</td>'
             f'<td>{esc(rng)}</td>'
-            f'<td><span class="pill" style="{seg_style}">{esc(seg)}</span></td>'
+            f'<td>{badge_html}</td>'
             f'<td>{cats_html}</td>'
             f'</tr>'
         )
@@ -517,15 +1086,14 @@ def page3_html(metrics):
         pct   = round(count / total_p * 100, 1) if total_p else 0
         bar_w = min(pct, 100)
         tier_html += (
-            f'<div style="padding:8px 0;">'
-            f'<div style="display:flex;justify-content:space-between;margin-bottom:5px;">'
-            f'<span style="font-size:10px;color:#64748b;">{esc(label)} '
-            f'<span style="color:#94a3b8;font-size:9px;">({esc(range_str)})</span></span>'
-            f'<span style="font-size:10px;font-weight:700;color:#0f172a;">{pct}%</span>'
+            f'<div class="price-dist-row">'
+            f'<div class="price-dist-label">'
+            f'{esc(label)} <span style="color:#94a3b8;font-size:8pt;">({esc(range_str)})</span>'
             f'</div>'
-            f'<div style="height:6px;background:#e2e8f0;border-radius:3px;">'
-            f'<div style="height:100%;background:#0f172a;border-radius:3px;width:{bar_w}%;"></div>'
+            f'<div class="price-dist-bar-track">'
+            f'<div class="price-dist-bar-fill" style="width:{bar_w}%;"></div>'
             f'</div>'
+            f'<div class="price-dist-value">{pct}%</div>'
             f'</div>'
         )
 
@@ -538,10 +1106,9 @@ def page3_html(metrics):
 
     return (
         f'<div class="page">'
-        f'<div class="top-bar"></div>'
-        f'<div class="content">'
-        f'<div class="sh first">Competitor Breakdown</div>'
-        f'<table>'
+        f'<div class="section-heading">Competitor Breakdown</div>'
+        f'<div class="section-heading-bar"></div>'
+        f'<table class="data-table">'
         f'<thead><tr>'
         f'<th>Store</th><th>Products</th><th>Avg Price</th>'
         f'<th>Price Range</th><th>Segment</th><th>Top Categories</th>'
@@ -549,14 +1116,12 @@ def page3_html(metrics):
         f'<tbody>{rows_html}</tbody>'
         f'</table>'
         f'<div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;">'
-        f'<div class="sh">Price Intelligence</div>'
+        f'<div class="section-heading mt-20">Price Intelligence</div>'
+        f'<div class="section-heading-bar"></div>'
         f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 24px;">'
         f'{tier_html}'
         f'</div>'
-        f'<p style="font-size:10px;color:#94a3b8;margin-top:12px;">'
-        f'{esc(price_summary)}'
-        f'</p>'
-        f'</div>'
+        f'<p class="text-muted mt-12">{esc(price_summary)}</p>'
         f'</div>'
         f'{footer_html(date_fmt, 3)}'
         f'</div>'
@@ -573,7 +1138,7 @@ def page4_html(metrics):
     any_launches  = any(s["new_last_30d"] > 0 for s in stores.values())
     if not any_launches:
         launches_html = (
-            '<p style="font-size:10px;color:#64748b;">'
+            '<p class="text-secondary" style="font-size:9.5pt;">'
             'No new products detected in this period.</p>'
         )
     else:
@@ -589,24 +1154,21 @@ def page4_html(metrics):
             product_rows = ""
             for t in shown:
                 product_rows += (
-                    f'<div style="display:flex;justify-content:space-between;'
-                    f'padding:5px 0;border-bottom:1px solid #f1f5f9;font-size:10px;">'
-                    f'<span style="color:#334155;">{esc(t)}</span>'
-                    f'<span style="color:#64748b;">{esc(price_str)}</span>'
+                    f'<div class="launches-product-row">'
+                    f'<span>{esc(t)}</span>'
+                    f'<span class="product-price">{esc(price_str)}</span>'
                     f'</div>'
                 )
             if remainder > 0:
                 product_rows += (
-                    f'<div style="font-size:9px;color:#94a3b8;padding:5px 0;">'
-                    f'+ {remainder} more</div>'
+                    f'<div class="launches-more">+ {remainder} more</div>'
                 )
 
             launches_html += (
                 f'<div style="margin-bottom:14px;">'
-                f'<div style="display:flex;align-items:center;gap:7px;margin-bottom:7px;">'
-                f'<div style="width:6px;height:6px;border-radius:50%;background:#f97316;flex-shrink:0;"></div>'
-                f'<span style="font-size:10px;font-weight:700;color:#0f172a;'
-                f'text-transform:uppercase;letter-spacing:0.05em;">{esc(name)}</span>'
+                f'<div class="launches-brand-header">'
+                f'<span class="launches-brand-dot" style="background:#e8762a;"></span>'
+                f'{esc(name)}'
                 f'</div>'
                 f'{product_rows}'
                 f'</div>'
@@ -618,14 +1180,12 @@ def page4_html(metrics):
     for cat, count in cats:
         pct = round(count / max_count * 100)
         cat_html += (
-            f'<div style="display:flex;align-items:center;gap:10px;'
-            f'padding:8px 0;border-bottom:1px solid #f1f5f9;">'
-            f'<span style="width:130px;font-size:10px;color:#334155;'
-            f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{esc(cat)}</span>'
-            f'<div style="flex:1;height:8px;background:#e2e8f0;border-radius:4px;">'
-            f'<div style="height:100%;background:#0f172a;border-radius:4px;width:{pct}%;"></div>'
+            f'<div class="cat-intel-row">'
+            f'<span class="cat-intel-label">{esc(cat)}</span>'
+            f'<div class="cat-intel-bar-track">'
+            f'<div class="cat-intel-bar-fill" style="width:{pct}%;"></div>'
             f'</div>'
-            f'<span style="font-size:10px;color:#64748b;width:20px;text-align:right;">{count}</span>'
+            f'<span class="cat-intel-value">{count}</span>'
             f'</div>'
         )
     cat_most       = cats[0][0]  if cats else "—"
@@ -638,19 +1198,14 @@ def page4_html(metrics):
 
     return (
         f'<div class="page">'
-        f'<div class="top-bar"></div>'
-        f'<div class="content">'
-        f'<div class="sh first">New Launches — Last 30 Days</div>'
+        f'<div class="section-heading">New Launches — Last 30 Days</div>'
+        f'<div class="section-heading-bar"></div>'
         f'{launches_html}'
-        f'<div class="sh">Category Intelligence</div>'
+        f'<div class="section-heading mt-20">Category Intelligence</div>'
+        f'<div class="section-heading-bar"></div>'
         f'<div style="margin-bottom:16px;">{cat_html}</div>'
         f'<div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;">'
-        f'<div style="background:#0f172a;border-radius:8px;padding:20px 24px;">'
-        f'<p style="font-size:12px;font-weight:600;color:white;line-height:1.5;">'
-        f'{cat_insight}'
-        f'</p>'
-        f'</div>'
-        f'</div>'
+        f'<div class="callout-dark"><p>{cat_insight}</p></div>'
         f'</div>'
         f'{footer_html(date_fmt, 4)}'
         f'</div>'
@@ -677,32 +1232,29 @@ def page5_html(metrics, md, agent3=None):
         cards_html = ""
         for i, s in enumerate(suggestions, 1):
             badge_key   = "MONITOR" if s["is_monitor"] else s["confidence"]
-            badge_style = CONFIDENCE_BADGE.get(badge_key, CONFIDENCE_BADGE["MONITOR"])
+            badge_cls   = CONFIDENCE_BADGE_CLS.get(badge_key, "badge--monitor")
             badge_label = f"MONITOR · {s['confidence']}" if s["is_monitor"] else s["confidence"]
 
             citation_html = ""
             if s["data_citation"]:
                 citation_html = (
-                    f'<div style="font-size:9px;color:#94a3b8;'
-                    f'margin-top:6px;line-height:1.5;">'
-                    f'Data: {esc(s["data_citation"])}'
+                    f'<div class="watch-card-evidence-alt">'
+                    f'<span class="evidence-label">Data:</span>'
+                    f'{esc(s["data_citation"])}'
                     f'</div>'
                 )
 
             cards_html += (
-                f'<div style="border:1px solid #e2e8f0;border-radius:8px;padding:18px 20px;'
-                f'display:flex;gap:20px;flex:1;min-height:120px;background:white;align-items:flex-start;">'
-                f'<div style="font-size:40px;font-weight:700;color:#f97316;line-height:1;'
-                f'min-width:40px;padding-top:4px;">{i}</div>'
-                f'<div style="width:1px;background:#f1f5f9;align-self:stretch;flex-shrink:0;"></div>'
-                f'<div style="display:flex;flex-direction:column;justify-content:center;'
-                f'padding-left:4px;flex:1;">'
-                f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">'
-                f'<div style="font-size:12px;font-weight:700;color:#0f172a;">{esc(s["title"])}</div>'
-                f'<span class="pill" style="{badge_style}font-size:8px;font-weight:700;">'
-                f'{esc(badge_label)}</span>'
+                f'<div class="watch-card">'
+                f'<div class="watch-card-rank">'
+                f'<span class="rank-number">{i}</span>'
                 f'</div>'
-                f'<div style="font-size:10px;color:#64748b;line-height:1.7;">{esc(s["body"])}</div>'
+                f'<div class="watch-card-body">'
+                f'<div class="watch-card-header">'
+                f'<div class="watch-card-title">{esc(s["title"])}</div>'
+                f'<span class="badge {badge_cls}">{esc(badge_label)}</span>'
+                f'</div>'
+                f'<div class="watch-card-text">{esc(s["body"])}</div>'
                 f'{citation_html}'
                 f'</div>'
                 f'</div>'
@@ -713,15 +1265,15 @@ def page5_html(metrics, md, agent3=None):
         cards_html = ""
         for i, (title, body) in enumerate(actions, 1):
             cards_html += (
-                f'<div style="border:1px solid #e2e8f0;border-radius:8px;padding:22px 20px;'
-                f'display:flex;gap:20px;flex:1;background:white;align-items:flex-start;">'
-                f'<div style="font-size:44px;font-weight:700;color:#f97316;line-height:1;'
-                f'min-width:44px;padding-top:4px;">{i}</div>'
-                f'<div style="width:1px;background:#f1f5f9;align-self:stretch;flex-shrink:0;"></div>'
-                f'<div style="display:flex;flex-direction:column;justify-content:center;padding-left:4px;">'
-                f'<div style="font-size:12px;font-weight:700;color:#0f172a;margin-bottom:8px;">'
-                f'{esc(title)}</div>'
-                f'<div style="font-size:11px;color:#64748b;line-height:1.8;">{esc(body)}</div>'
+                f'<div class="watch-card">'
+                f'<div class="watch-card-rank">'
+                f'<span class="rank-number">{i}</span>'
+                f'</div>'
+                f'<div class="watch-card-body">'
+                f'<div class="watch-card-header">'
+                f'<div class="watch-card-title">{esc(title)}</div>'
+                f'</div>'
+                f'<div class="watch-card-text">{esc(body)}</div>'
                 f'</div>'
                 f'</div>'
             )
@@ -734,29 +1286,28 @@ def page5_html(metrics, md, agent3=None):
             for w in dq_warnings
         )
         data_notes_html = (
-            f'<div class="sh" style="margin-top:16px;">Data Notes</div>'
-            f'<ul style="padding-left:16px;font-size:9px;color:#64748b;line-height:1.6;">'
+            f'<div class="section-heading mt-16">Data Notes</div>'
+            f'<div class="section-heading-bar"></div>'
+            f'<ul style="padding-left:16px;font-size:8pt;color:#64748b;line-height:1.6;">'
             f'{items}'
             f'</ul>'
         )
 
     return (
         f'<div class="page" style="height:297mm;">'
-        f'<div class="top-bar"></div>'
-        f'<div class="content" style="padding-bottom:52px;">'
-        f'<div class="sh first">3 Areas to Watch Today</div>'
-        f'<p style="font-size:10px;color:#94a3b8;margin-bottom:14px;">'
+        f'<div class="section-heading">3 Areas to Watch Today</div>'
+        f'<div class="section-heading-bar"></div>'
+        f'<p class="watch-section-intro">'
         f'The following patterns were flagged by AI analysis of today\'s market data.'
         f'</p>'
         f'<div style="flex:1;display:flex;flex-direction:column;gap:10px;">'
         f'{cards_html}'
         f'</div>'
         f'{data_notes_html}'
-        f'<p style="text-align:center;font-size:9px;color:#94a3b8;margin-top:14px;">'
+        f'<p class="text-muted mt-16" style="text-align:center;font-size:8pt;">'
         f'Candle Intel · Automated competitor intelligence · '
         f'Strategic decisions remain with your team.'
         f'</p>'
-        f'</div>'
         f'{footer_html(date_fmt, 5)}'
         f'</div>'
     )
@@ -776,7 +1327,6 @@ def build_html(metrics, md, agent3=None):
         f'<html lang="en">\n'
         f'<head>\n'
         f'<meta charset="UTF-8"/>\n'
-        f'<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">\n'
         f'<style>{CSS}</style>\n'
         f'</head>\n'
         f'<body>\n'
