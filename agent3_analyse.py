@@ -506,6 +506,12 @@ def run() -> dict:
     print()
     save_files(metrics, writer_output)
 
+    # Save full agent3 output dict for agent4 structured parsing
+    a3_path = Path("reports") / f"agent3_{result['run_date']}.json"
+    with open(a3_path, "w", encoding="utf-8") as f:
+        json.dump(result, f, indent=2, ensure_ascii=False)
+    print(f"  Saved: {a3_path}")
+
     # Save to Supabase
     save_to_supabase(result)
 

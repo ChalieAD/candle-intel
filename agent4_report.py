@@ -18,6 +18,7 @@ def load_latest(reports_dir="reports"):
     p = Path(reports_dir)
     json_files = sorted(p.glob("metrics_*.json"), reverse=True)
     md_files   = sorted(p.glob("report_*.md"),    reverse=True)
+    a3_files   = sorted(p.glob("agent3_*.json"),  reverse=True)
     if not json_files:
         raise FileNotFoundError("No metrics_*.json found in reports/")
     with open(json_files[0]) as f:
@@ -26,7 +27,11 @@ def load_latest(reports_dir="reports"):
     if md_files:
         with open(md_files[0], encoding="utf-8") as f:
             md = f.read()
-    return metrics, md
+    agent3 = None
+    if a3_files:
+        with open(a3_files[0], encoding="utf-8") as f:
+            agent3 = json.load(f)
+    return metrics, md, agent3
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -91,6 +96,76 @@ def parse_actions(md, count=3):
     while len(result) < count:
         result.append(("No further actions available.", ""))
     return result
+
+def parse_writer_page1(agent3):
+    """
+    Extract WHAT HAPPENED TODAY and WHAT IT MEANS FOR YOU from writer_output.
+    Returns a dict with keys 'happened' and 'means', or None if not parseable.
+    """
+    text = (agent3 or {}).get("writer_output", "")
+    if not text:
+        return None
+
+    # Headers may appear bare or with markdown ## prefix
+    _sec = r"(?:#{1,3}\s*)?"
+    happened_m = re.search(
+        rf"{_sec}WHAT HAPPENED TODAY\s*\n(.+?)(?=\n{_sec}WHAT IT MEANS FOR YOU|\n{_sec}YOUR 3|\n{_sec}DATA NOTES|\Z)",
+        text, re.DOTALL | re.IGNORECASE,
+    )
+    means_m = re.search(
+        rf"{_sec}WHAT IT MEANS FOR YOU\s*\n(.+?)(?=\n{_sec}YOUR 3|\n{_sec}DATA NOTES|\Z)",
+        text, re.DOTALL | re.IGNORECASE,
+    )
+    if not happened_m and not means_m:
+        return None
+    return {
+        "happened": happened_m.group(1).strip() if happened_m else "",
+        "means":    means_m.group(1).strip()    if means_m    else "",
+    }
+
+
+def parse_advisor_suggestions(agent3):
+    """
+    Parse SUGGESTION blocks from advisor_output.
+    Returns list of dicts: {title, body, data_citation, confidence, is_monitor}
+    or None if not parseable.
+    """
+    text = (agent3 or {}).get("advisor_output", "")
+    if not text:
+        return None
+
+    blocks = re.split(r"(?=SUGGESTION\s+\d)", text.strip(), flags=re.IGNORECASE)
+    results = []
+    for block in blocks:
+        block = block.strip()
+        if not re.match(r"SUGGESTION\s+\d", block, re.IGNORECASE):
+            continue
+
+        conf_m     = re.search(r"\[CONFIDENCE:\s*(HIGH|MEDIUM|LOW)\]", block, re.IGNORECASE)
+        confidence = conf_m.group(1).upper() if conf_m else "MEDIUM"
+        is_monitor = bool(re.search(r"SUGGESTION\s+\d+\s*[—\-]\s*MONITOR", block, re.IGNORECASE))
+
+        data_m  = re.search(r"Data behind this:\s*(.+?)(?=\nWhat it suggests:|\Z)", block, re.IGNORECASE | re.DOTALL)
+        body_m  = re.search(r"What it suggests:\s*(.+?)(?=\nWhy this confidence|\Z)",  block, re.IGNORECASE | re.DOTALL)
+
+        data_citation = data_m.group(1).strip() if data_m else ""
+        body          = body_m.group(1).strip() if body_m else block.split("\n", 1)[-1].strip()
+
+        # Title: first sentence of body (up to first full stop or 80 chars)
+        title = re.split(r"(?<=\w)\.(?=\s|$)", body)[0].strip()
+        if len(title) > 90:
+            title = title[:87].rstrip() + "…"
+
+        results.append({
+            "confidence":   confidence,
+            "is_monitor":   is_monitor,
+            "data_citation": data_citation,
+            "body":         body,
+            "title":        title,
+        })
+
+    return results if results else None
+
 
 def category_counts(metrics):
     counter = Counter()
@@ -198,7 +273,7 @@ def footer_html(date_fmt, page_num):
 
 # ── Page 1 — Executive Summary ────────────────────────────────────────────────
 
-def page1_html(metrics, md):
+def page1_html(metrics, md, agent3=None):
     date_str   = metrics["date"]
     date_fmt   = datetime.strptime(date_str, "%Y-%m-%d").strftime("%B %d, %Y")
     stores     = metrics["stores"]
@@ -207,7 +282,7 @@ def page1_html(metrics, md):
     market_avg = f"${round(sum(avg_prices)/len(avg_prices), 2)}" if avg_prices else "—"
     total_p    = metrics["total_products"]
     total_s    = metrics["total_stores"]
-    snapshot   = parse_snapshot(md)
+    writer_p1  = parse_writer_page1(agent3)
 
     most_active  = max(stores.items(), key=lambda x: x[1].get("new_last_30d", 0))
     all_min_vals = [s["min_price"] for s in stores.values() if s.get("min_price") is not None]
@@ -246,6 +321,26 @@ def page1_html(metrics, md):
             f'</div>'
         )
 
+    if writer_p1:
+        insight_html = (
+            f'<div style="background:#f8fafc;border-left:3px solid #f97316;border-radius:0 6px 6px 0;'
+            f'padding:14px 16px;font-size:11px;color:#334155;line-height:1.7;margin-bottom:12px;">'
+            f'{esc(writer_p1["happened"])}'
+            f'</div>'
+            f'<div class="sh">What It Means For You</div>'
+            f'<div style="background:#f8fafc;border-left:3px solid #0f172a;border-radius:0 6px 6px 0;'
+            f'padding:14px 16px;font-size:11px;color:#334155;line-height:1.7;">'
+            f'{esc(writer_p1["means"])}'
+            f'</div>'
+        )
+    else:
+        insight_html = (
+            f'<div style="background:#f8fafc;border-left:3px solid #f97316;border-radius:0 6px 6px 0;'
+            f'padding:14px 16px;font-size:11px;color:#334155;line-height:1.7;">'
+            f'{esc(parse_snapshot(md))}'
+            f'</div>'
+        )
+
     return (
         f'<div class="page">'
         # Banner
@@ -265,11 +360,8 @@ def page1_html(metrics, md):
         f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px;">'
         f'{kpi_html}'
         f'</div>'
-        f'<div class="sh">Key Insight</div>'
-        f'<div style="background:#f8fafc;border-left:3px solid #f97316;border-radius:0 6px 6px 0;'
-        f'padding:14px 16px;font-size:11px;color:#334155;line-height:1.7;">'
-        f'{esc(snapshot)}'
-        f'</div>'
+        f'<div class="sh">What Happened Today</div>'
+        f'{insight_html}'
         f'<div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;">'
         f'<div class="sh">Market Overview</div>'
         f'{overview_html}'
@@ -530,25 +622,86 @@ def page4_html(metrics):
 
 # ── Page 5 — Areas to Watch ───────────────────────────────────────────────────
 
-def page5_html(metrics, md):
-    date_str = metrics["date"]
-    date_fmt = datetime.strptime(date_str, "%Y-%m-%d").strftime("%B %d, %Y")
-    actions  = parse_actions(md, count=3)
+CONFIDENCE_BADGE = {
+    "HIGH":    "background:#dcfce7;color:#166534;",
+    "MEDIUM":  "background:#dbeafe;color:#1e40af;",
+    "LOW":     "background:#fef3c7;color:#92400e;",
+    "MONITOR": "background:#f1f5f9;color:#475569;",
+}
 
-    cards_html = ""
-    for i, (title, body) in enumerate(actions, 1):
-        cards_html += (
-            f'<div style="border:1px solid #e2e8f0;border-radius:8px;padding:22px 20px;'
-            f'display:flex;gap:20px;flex:1;background:white;align-items:flex-start;">'
-            f'<div style="font-size:44px;font-weight:700;color:#f97316;line-height:1;'
-            f'min-width:44px;padding-top:4px;">{i}</div>'
-            f'<div style="width:1px;background:#f1f5f9;align-self:stretch;flex-shrink:0;"></div>'
-            f'<div style="display:flex;flex-direction:column;justify-content:center;padding-left:4px;">'
-            f'<div style="font-size:12px;font-weight:700;color:#0f172a;margin-bottom:8px;">'
-            f'{esc(title)}</div>'
-            f'<div style="font-size:11px;color:#64748b;line-height:1.8;">{esc(body)}</div>'
-            f'</div>'
-            f'</div>'
+
+def page5_html(metrics, md, agent3=None):
+    date_str     = metrics["date"]
+    date_fmt     = datetime.strptime(date_str, "%Y-%m-%d").strftime("%B %d, %Y")
+    suggestions  = parse_advisor_suggestions(agent3)
+    dq_warnings  = (agent3 or {}).get("data_quality_warnings", [])
+
+    # ── Suggestion cards ──────────────────────────────────────────────────────
+    if suggestions:
+        cards_html = ""
+        for i, s in enumerate(suggestions, 1):
+            badge_key   = "MONITOR" if s["is_monitor"] else s["confidence"]
+            badge_style = CONFIDENCE_BADGE.get(badge_key, CONFIDENCE_BADGE["MONITOR"])
+            badge_label = f"MONITOR · {s['confidence']}" if s["is_monitor"] else s["confidence"]
+
+            citation_html = ""
+            if s["data_citation"]:
+                citation_html = (
+                    f'<div style="font-size:9px;color:#94a3b8;font-style:italic;'
+                    f'margin-top:6px;line-height:1.5;">'
+                    f'Data: {esc(s["data_citation"])}'
+                    f'</div>'
+                )
+
+            cards_html += (
+                f'<div style="border:1px solid #e2e8f0;border-radius:8px;padding:18px 20px;'
+                f'display:flex;gap:20px;flex:1;background:white;align-items:flex-start;">'
+                f'<div style="font-size:40px;font-weight:700;color:#f97316;line-height:1;'
+                f'min-width:40px;padding-top:4px;">{i}</div>'
+                f'<div style="width:1px;background:#f1f5f9;align-self:stretch;flex-shrink:0;"></div>'
+                f'<div style="display:flex;flex-direction:column;justify-content:center;'
+                f'padding-left:4px;flex:1;">'
+                f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">'
+                f'<div style="font-size:12px;font-weight:700;color:#0f172a;">{esc(s["title"])}</div>'
+                f'<span class="pill" style="{badge_style}font-size:8px;font-weight:700;">'
+                f'{esc(badge_label)}</span>'
+                f'</div>'
+                f'<div style="font-size:10px;color:#64748b;line-height:1.7;">{esc(s["body"])}</div>'
+                f'{citation_html}'
+                f'</div>'
+                f'</div>'
+            )
+    else:
+        # Fallback to old markdown parser
+        actions    = parse_actions(md, count=3)
+        cards_html = ""
+        for i, (title, body) in enumerate(actions, 1):
+            cards_html += (
+                f'<div style="border:1px solid #e2e8f0;border-radius:8px;padding:22px 20px;'
+                f'display:flex;gap:20px;flex:1;background:white;align-items:flex-start;">'
+                f'<div style="font-size:44px;font-weight:700;color:#f97316;line-height:1;'
+                f'min-width:44px;padding-top:4px;">{i}</div>'
+                f'<div style="width:1px;background:#f1f5f9;align-self:stretch;flex-shrink:0;"></div>'
+                f'<div style="display:flex;flex-direction:column;justify-content:center;padding-left:4px;">'
+                f'<div style="font-size:12px;font-weight:700;color:#0f172a;margin-bottom:8px;">'
+                f'{esc(title)}</div>'
+                f'<div style="font-size:11px;color:#64748b;line-height:1.8;">{esc(body)}</div>'
+                f'</div>'
+                f'</div>'
+            )
+
+    # ── Data Notes section ────────────────────────────────────────────────────
+    data_notes_html = ""
+    if dq_warnings:
+        items = "".join(
+            f'<li style="margin-bottom:4px;">{esc(w)}</li>'
+            for w in dq_warnings
+        )
+        data_notes_html = (
+            f'<div class="sh" style="margin-top:16px;">Data Notes</div>'
+            f'<ul style="padding-left:16px;font-size:9px;color:#64748b;line-height:1.6;">'
+            f'{items}'
+            f'</ul>'
         )
 
     return (
@@ -556,12 +709,13 @@ def page5_html(metrics, md):
         f'<div class="top-bar"></div>'
         f'<div class="content" style="padding-bottom:52px;">'
         f'<div class="sh first">3 Areas to Watch Today</div>'
-        f'<p style="font-size:10px;font-style:italic;color:#94a3b8;margin-bottom:20px;">'
+        f'<p style="font-size:10px;font-style:italic;color:#94a3b8;margin-bottom:14px;">'
         f'The following patterns were flagged by AI analysis of today\'s market data.'
         f'</p>'
-        f'<div style="flex:1;display:flex;flex-direction:column;gap:12px;">'
+        f'<div style="display:flex;flex-direction:column;gap:10px;">'
         f'{cards_html}'
         f'</div>'
+        f'{data_notes_html}'
         f'<p style="text-align:center;font-size:9px;color:#94a3b8;margin-top:14px;">'
         f'Candle Intel · Automated competitor intelligence · '
         f'Strategic decisions remain with your team.'
@@ -573,13 +727,13 @@ def page5_html(metrics, md):
 
 # ── HTML Builder ──────────────────────────────────────────────────────────────
 
-def build_html(metrics, md):
+def build_html(metrics, md, agent3=None):
     pages = "\n".join([
-        page1_html(metrics, md),
+        page1_html(metrics, md, agent3),
         page2_html(metrics),
         page3_html(metrics),
         page4_html(metrics),
-        page5_html(metrics, md),
+        page5_html(metrics, md, agent3),
     ])
     return (
         f'<!DOCTYPE html>\n'
@@ -596,10 +750,10 @@ def build_html(metrics, md):
 
 # ── PDF Builder ───────────────────────────────────────────────────────────────
 
-def build_pdf(metrics, md):
+def build_pdf(metrics, md, agent3=None):
     date_str = metrics["date"]
     out_path = str(Path("reports") / f"report_{date_str}.pdf")
-    html_str = build_html(metrics, md)
+    html_str = build_html(metrics, md, agent3)
 
     with open("reports/preview.html", "w", encoding="utf-8") as f:
         f.write(html_str)
@@ -629,11 +783,13 @@ def run():
     print("  AGENT 4 -- PDF REPORT GENERATOR (Playwright)")
     print(f"{'='*60}\n")
 
-    metrics, md = load_latest()
+    metrics, md, agent3 = load_latest()
     print(f"  Loaded metrics for {metrics['date']}")
+    if agent3:
+        print(f"  Loaded agent3 output (run_date: {agent3.get('run_date')})")
     print("  Rendering HTML -> PDF via Chromium...")
 
-    pdf_path = build_pdf(metrics, md)
+    pdf_path = build_pdf(metrics, md, agent3)
     abs_path = str(Path(pdf_path).resolve())
 
     print(f"  Saved: {pdf_path}")
