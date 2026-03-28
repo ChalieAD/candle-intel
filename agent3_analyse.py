@@ -316,6 +316,9 @@ implications about their market. Your job is to surface what deserves their atte
 Rules:
 - Output exactly 3 suggestions
 - Each suggestion MUST cite the specific data observation that supports it
+- CRITICAL: Never reference observation numbers like 'Observation 6' or \
+'Observations 8 and 9' in your output. The client does not see the \
+observation list. Always describe the actual finding in plain words instead.
 - Suggestion 3 can be "what to monitor this week" if there are fewer than 3 actionable insights
 - Express a confidence level for each: HIGH / MEDIUM / LOW with one sentence explaining why
 - You are FORBIDDEN from these phrases: "launch new products", "optimize your listings", \
@@ -372,6 +375,11 @@ mid-range dominates, leverage, optimise
 - Numbers always have context: not '50.6%' but '50.6% of the 500 products we track'
 - If something is uncertain, say so plainly: 'we're not sure yet' not 'data is insufficient'
 - Maximum reading age: smart 16 year old. Minimum: don't be patronising.
+- Never start a suggestion with 'Today's data suggests' — \
+lead with the specific finding instead. For example: \
+'Keap's pricing shows a $0 minimum — leave them out of \
+your pricing comparisons this week' not \
+'Today's data suggests investigating Keap's pricing'
 - Chain fidelity is non-negotiable: every suggestion in YOUR 3 FOCUS \
 AREAS must preserve the Advisor's exact data citation and specific \
 direction. You may reword for plain language but you cannot soften, \

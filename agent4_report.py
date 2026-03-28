@@ -106,14 +106,15 @@ def parse_writer_page1(agent3):
     if not text:
         return None
 
-    # Headers may appear bare or with markdown ## prefix
-    _sec = r"(?:#{1,3}\s*)?"
+    # Headers may appear bare, with ## prefix, or wrapped in **bold**
+    _sec = r"(?:#{1,3}\s*)?(?:\*{1,2})?"
+    _end = r"(?:\*{1,2})?"
     happened_m = re.search(
-        rf"{_sec}WHAT HAPPENED TODAY\s*\n(.+?)(?=\n{_sec}WHAT IT MEANS FOR YOU|\n{_sec}YOUR 3|\n{_sec}DATA NOTES|\Z)",
+        rf"{_sec}WHAT HAPPENED TODAY{_end}\s*\n(.+?)(?=\n{_sec}WHAT IT MEANS FOR YOU|\n{_sec}YOUR 3|\n{_sec}DATA NOTES|\Z)",
         text, re.DOTALL | re.IGNORECASE,
     )
     means_m = re.search(
-        rf"{_sec}WHAT IT MEANS FOR YOU\s*\n(.+?)(?=\n{_sec}YOUR 3|\n{_sec}DATA NOTES|\Z)",
+        rf"{_sec}WHAT IT MEANS FOR YOU{_end}\s*\n(.+?)(?=\n{_sec}YOUR 3|\n{_sec}DATA NOTES|\Z)",
         text, re.DOTALL | re.IGNORECASE,
     )
     if not happened_m and not means_m:
@@ -168,11 +169,23 @@ def parse_advisor_suggestions(agent3):
 
 
 def category_counts(metrics):
+    """
+    Count total products per category across all stores.
+    Each store's top_product_types list is ranked — we weight by store's
+    total_products split evenly across its listed types, so bar widths
+    reflect actual product volume rather than store count.
+    """
     counter = Counter()
     for s in metrics["stores"].values():
-        for pt in s.get("top_product_types", []):
-            counter[pt] += 1
-    return counter.most_common(12)
+        types = s.get("top_product_types", [])
+        total = s.get("total_products", 0)
+        if not types or not total:
+            continue
+        per_type = total / len(types)
+        for pt in types:
+            counter[pt] += per_type
+    # Round to ints for display
+    return [(cat, int(round(count))) for cat, count in counter.most_common(12)]
 
 # ── CSS ───────────────────────────────────────────────────────────────────────
 
@@ -180,21 +193,23 @@ CSS = """
 @page { size: A4; margin: 0; }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  font-size: 12px;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 11px;
   line-height: 1.6;
-  background: white;
+  background: #e5e7eb;
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
 .page {
   width: 210mm;
   height: 297mm;
+  margin: 0 auto;
   page-break-after: always;
   overflow: hidden;
   position: relative;
   display: flex;
   flex-direction: column;
+  background: white;
 }
 .page:last-child { page-break-after: avoid; }
 .top-bar { height: 6px; background: #0f172a; flex-shrink: 0; }
@@ -219,18 +234,18 @@ body {
   background: white;
 }
 .sh {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.12em;
   color: #0f172a;
   padding-bottom: 7px;
-  border-bottom: 2px solid #f97316;
+  border-bottom: 3px solid #f97316;
   margin-bottom: 14px;
   margin-top: 24px;
 }
 .sh.first { margin-top: 0; }
-table { width: 100%; border-collapse: collapse; font-size: 10px; }
+table { width: 100%; border-collapse: collapse; font-size: 11px; }
 thead tr { background: #0f172a; }
 thead th {
   padding: 8px 10px;
@@ -241,7 +256,7 @@ thead th {
   text-align: left;
   color: white;
 }
-tbody td { padding: 8px 10px; border-bottom: 1px solid #e2e8f0; color: #334155; }
+tbody td { padding: 11px 10px; border-bottom: 1px solid #e2e8f0; color: #334155; }
 tbody tr:nth-child(even) td { background: #f8fafc; }
 .pill {
   display: inline-block;
@@ -301,7 +316,7 @@ def page1_html(metrics, md, agent3=None):
         kpi_html += (
             f'<div style="border:1px solid #e2e8f0;border-top:3px solid #f97316;'
             f'border-radius:6px;padding:16px 18px;">'
-            f'<div style="font-size:32px;font-weight:700;color:#0f172a;margin-bottom:4px;">{esc(val)}</div>'
+            f'<div style="font-size:36px;font-weight:700;color:#0f172a;margin-bottom:4px;">{esc(val)}</div>'
             f'<div style="font-size:9px;text-transform:uppercase;color:#64748b;letter-spacing:0.1em;">{esc(label)}</div>'
             f'</div>'
         )
@@ -421,12 +436,21 @@ def page2_html(metrics):
         )
     summary_text = " ".join(summary_parts)
 
+    score_tiles = "".join(
+        f'<div style="flex:1;background:rgba(255,255,255,0.07);border-radius:6px;'
+        f'padding:14px 16px;min-height:80px;display:flex;flex-direction:column;justify-content:center;">'
+        f'<div style="font-size:22px;font-weight:700;color:{score_color(scores[name])};">{scores[name]}/10</div>'
+        f'<div style="font-size:10px;color:#94a3b8;margin-top:4px;">{esc(name)}</div>'
+        f'</div>'
+        for name in sorted(scores, key=lambda n: scores[n], reverse=True)
+    )
+
     return (
         f'<div class="page">'
         f'<div class="top-bar"></div>'
         f'<div class="content">'
         f'<div class="sh first">Market Momentum Scores</div>'
-        f'<p style="font-size:10px;font-style:italic;color:#94a3b8;margin-bottom:14px;">'
+        f'<p style="font-size:10px;color:#94a3b8;margin-bottom:16px;">'
         f'Momentum is calculated from new product activity, pricing range, and catalogue volume. Scored 1–10.'
         f'</p>'
         f'<table>'
@@ -437,9 +461,14 @@ def page2_html(metrics):
         f'<tbody>{rows_html}</tbody>'
         f'</table>'
         f'<div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;">'
-        f'<div style="background:#f8fafc;border-left:3px solid #f97316;border-radius:0 4px 4px 0;'
-        f'padding:12px 14px;margin-top:16px;font-size:10px;color:#334155;line-height:1.6;">'
-        f'<strong>Momentum Summary —</strong> {summary_text}'
+        f'<div class="sh">What This Means</div>'
+        f'<div style="background:#0f172a;border-radius:8px;padding:32px 28px;">'
+        f'<p style="font-size:13px;font-weight:600;color:white;margin-bottom:20px;line-height:1.5;">'
+        f'{summary_text}'
+        f'</p>'
+        f'<div style="display:flex;gap:12px;">'
+        f'{score_tiles}'
+        f'</div>'
         f'</div>'
         f'</div>'
         f'</div>'
@@ -524,7 +553,7 @@ def page3_html(metrics):
         f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 24px;">'
         f'{tier_html}'
         f'</div>'
-        f'<p style="font-size:10px;color:#94a3b8;font-style:italic;margin-top:12px;">'
+        f'<p style="font-size:10px;color:#94a3b8;margin-top:12px;">'
         f'{esc(price_summary)}'
         f'</p>'
         f'</div>'
@@ -568,7 +597,7 @@ def page4_html(metrics):
                 )
             if remainder > 0:
                 product_rows += (
-                    f'<div style="font-size:9px;font-style:italic;color:#94a3b8;padding:5px 0;">'
+                    f'<div style="font-size:9px;color:#94a3b8;padding:5px 0;">'
                     f'+ {remainder} more</div>'
                 )
 
@@ -590,20 +619,21 @@ def page4_html(metrics):
         pct = round(count / max_count * 100)
         cat_html += (
             f'<div style="display:flex;align-items:center;gap:10px;'
-            f'padding:5px 0;border-bottom:1px solid #f1f5f9;">'
+            f'padding:8px 0;border-bottom:1px solid #f1f5f9;">'
             f'<span style="width:130px;font-size:10px;color:#334155;'
             f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{esc(cat)}</span>'
-            f'<div style="flex:1;height:5px;background:#e2e8f0;border-radius:3px;">'
-            f'<div style="height:100%;background:#0f172a;border-radius:3px;width:{pct}%;"></div>'
+            f'<div style="flex:1;height:8px;background:#e2e8f0;border-radius:4px;">'
+            f'<div style="height:100%;background:#0f172a;border-radius:4px;width:{pct}%;"></div>'
             f'</div>'
             f'<span style="font-size:10px;color:#64748b;width:20px;text-align:right;">{count}</span>'
             f'</div>'
         )
-    cat_most  = cats[0][0]  if cats else "—"
-    cat_least = cats[-1][0] if len(cats) > 1 else "—"
-    cat_summary = (
-        f"Most represented: {esc(cat_most)} · "
-        f"Least represented (potential gap): {esc(cat_least)}"
+    cat_most       = cats[0][0]  if cats else "—"
+    cat_most_count = cats[0][1]  if cats else 0
+    cat_least      = cats[-1][0] if len(cats) > 1 else "—"
+    cat_insight = (
+        f"{esc(cat_most)} dominates with {cat_most_count} products across tracked brands. "
+        f"{esc(cat_least)} has the lowest representation — a potential gap worth exploring."
     )
 
     return (
@@ -613,8 +643,14 @@ def page4_html(metrics):
         f'<div class="sh first">New Launches — Last 30 Days</div>'
         f'{launches_html}'
         f'<div class="sh">Category Intelligence</div>'
-        f'<div style="margin-bottom:12px;">{cat_html}</div>'
-        f'<p style="font-size:10px;font-style:italic;color:#94a3b8;">{cat_summary}</p>'
+        f'<div style="margin-bottom:16px;">{cat_html}</div>'
+        f'<div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;">'
+        f'<div style="background:#0f172a;border-radius:8px;padding:20px 24px;">'
+        f'<p style="font-size:12px;font-weight:600;color:white;line-height:1.5;">'
+        f'{cat_insight}'
+        f'</p>'
+        f'</div>'
+        f'</div>'
         f'</div>'
         f'{footer_html(date_fmt, 4)}'
         f'</div>'
@@ -647,7 +683,7 @@ def page5_html(metrics, md, agent3=None):
             citation_html = ""
             if s["data_citation"]:
                 citation_html = (
-                    f'<div style="font-size:9px;color:#94a3b8;font-style:italic;'
+                    f'<div style="font-size:9px;color:#94a3b8;'
                     f'margin-top:6px;line-height:1.5;">'
                     f'Data: {esc(s["data_citation"])}'
                     f'</div>'
@@ -655,7 +691,7 @@ def page5_html(metrics, md, agent3=None):
 
             cards_html += (
                 f'<div style="border:1px solid #e2e8f0;border-radius:8px;padding:18px 20px;'
-                f'display:flex;gap:20px;flex:1;background:white;align-items:flex-start;">'
+                f'display:flex;gap:20px;flex:1;min-height:120px;background:white;align-items:flex-start;">'
                 f'<div style="font-size:40px;font-weight:700;color:#f97316;line-height:1;'
                 f'min-width:40px;padding-top:4px;">{i}</div>'
                 f'<div style="width:1px;background:#f1f5f9;align-self:stretch;flex-shrink:0;"></div>'
@@ -709,10 +745,10 @@ def page5_html(metrics, md, agent3=None):
         f'<div class="top-bar"></div>'
         f'<div class="content" style="padding-bottom:52px;">'
         f'<div class="sh first">3 Areas to Watch Today</div>'
-        f'<p style="font-size:10px;font-style:italic;color:#94a3b8;margin-bottom:14px;">'
+        f'<p style="font-size:10px;color:#94a3b8;margin-bottom:14px;">'
         f'The following patterns were flagged by AI analysis of today\'s market data.'
         f'</p>'
-        f'<div style="display:flex;flex-direction:column;gap:10px;">'
+        f'<div style="flex:1;display:flex;flex-direction:column;gap:10px;">'
         f'{cards_html}'
         f'</div>'
         f'{data_notes_html}'
@@ -740,6 +776,7 @@ def build_html(metrics, md, agent3=None):
         f'<html lang="en">\n'
         f'<head>\n'
         f'<meta charset="UTF-8"/>\n'
+        f'<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">\n'
         f'<style>{CSS}</style>\n'
         f'</head>\n'
         f'<body>\n'
