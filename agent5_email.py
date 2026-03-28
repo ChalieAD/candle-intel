@@ -57,12 +57,25 @@ def extract_notable_movement(md: str) -> str:
     return lines[0] if lines else "New product activity detected across tracked competitors."
 
 
+def _new_drops_sentence(stores: dict) -> str:
+    launchers = sorted(
+        [(name, s.get("new_last_30d", 0)) for name, s in stores.items()
+         if s.get("new_last_30d", 0) > 0],
+        key=lambda x: x[1], reverse=True,
+    )
+    if not launchers:
+        return "No new products detected across tracked competitors in the last 30 days."
+    parts = [f"{name} ({count})" for name, count in launchers]
+    if len(parts) == 1:
+        return f"{parts[0]} launched new products in the last 30 days."
+    return f"{', '.join(parts[:-1])} and {parts[-1]} launched new products in the last 30 days."
+
+
 def build_email_html(metrics: dict, md: str) -> str:
     stores    = metrics.get("stores", {})
     date_str  = metrics.get("date", date.today().isoformat())
     date_fmt  = datetime.strptime(date_str, "%Y-%m-%d").strftime("%B %d, %Y")
 
-    total_new   = sum(s.get("new_last_30d", 0) for s in stores.values())
     avg_prices  = [s["avg_price"] for s in stores.values() if s.get("avg_price")]
     market_avg  = round(sum(avg_prices) / len(avg_prices), 2) if avg_prices else 0
 
@@ -72,7 +85,7 @@ def build_email_html(metrics: dict, md: str) -> str:
         most_active_name  = ma[0]
         most_active_drops = ma[1].get("new_last_30d", 0)
 
-    notable = extract_notable_movement(md)
+    new_drops_sentence = _new_drops_sentence(stores)
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -112,7 +125,7 @@ def build_email_html(metrics: dict, md: str) -> str:
                 The market average price is currently <strong>${market_avg}</strong> across all tracked competitors.
               </li>
               <li style="margin-bottom:6px;">
-                {notable}
+                {new_drops_sentence}
               </li>
             </ul>
 
